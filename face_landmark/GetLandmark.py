@@ -1,11 +1,13 @@
 
+import os
 import cv2
 import numpy as np
 import torch
 from face_landmark.MobileFaceNet import MobileFaceNet
 
 model_landmark = MobileFaceNet(input_size=64, embedding_size=136)
-model_landmark.load_state_dict(torch.load("./face_landmark/vfl_1.02_578_6.734591484069824.pth.tar", map_location=torch.device('cpu'))['state_dict'])
+model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vfl_1.02_578_6.734591484069824.pth.tar")
+model_landmark.load_state_dict(torch.load(model_path, map_location=torch.device('cpu'), weights_only=True)['state_dict'])
 model_landmark.eval()
 
 def get_face_landmark(gray_img, bounding_box):

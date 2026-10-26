@@ -13,6 +13,56 @@
 
 ---
 
+## Fork notes (Inton1701)
+
+Changes in this fork, and how it was tested. The Faceplugin docs below describe a `FaceRecognition` class that does not exist; the real API is `run.py`.
+
+**Usage**
+
+```python
+import sys; sys.path.insert(0, "path/to/this/repo")   # works from any folder
+import cv2, run
+n_a, *_, feats_a = run.GetImageInfo(cv2.imread("a.jpg"), 5)   # returns count, boxes, scores, landmarks, align_imgs, features
+n_b, *_, feats_b = run.GetImageInfo(cv2.imread("b.jpg"), 5)
+score = run.get_similarity(feats_a[0], feats_b[0])      # same person if score > run.threshold (75)
+```
+
+```bash
+python run.py a.jpg b.jpg            # defaults to test/1.jpg test/2.png
+python run.py a.jpg b.jpg --tuned    # LFW fine-tuned head, threshold run.tuned_threshold (71.9)
+```
+
+**Fixes**
+
+- `GetImageInfo` validates input: `None`/empty/non-uint8 raise `ValueError`/`TypeError`; grayscale, BGRA and sliced (non-contiguous) arrays are converted instead of crashing.
+- Model paths resolve from the package, so it runs from any working directory.
+- `torch.load(..., weights_only=True)` everywhere.
+- Each face gets its own align image (they used to share one buffer); `run.py` exits cleanly when no face is found.
+
+**Accuracy (LFW, 6,000 pairs, CPU)**
+
+| | Accuracy | Impostors accepted | True matches at 0.1% impostors |
+|---|---|---|---|
+| As shipped, threshold 75 | 98.03% | 1.70% | 92.1% (threshold ~80) |
+| Fine-tuned head, 10-fold cross-validated | 98.47% | 1.07% | 93.8% |
+
+`face_feature/tuned_head.npz` is a 256x256 linear layer on top of the frozen embeddings, trained on all LFW pairs, so its LFW numbers come from the cross-validated run above, not from the shipped file. Degraded photos (heavy blur, sunglasses, mask, low resolution, upside down) mostly get rejected rather than mismatched. There is no liveness / anti-spoofing check.
+
+**Reproduce**
+
+```bash
+python eval/embed_lfw.py  <lfw_dir>   # downloads LFW (~173 MB), embeds all pair images (~10 min CPU)
+python eval/eval_lfw.py   <lfw_dir>   # accuracy table above
+python eval/finetune_head.py <lfw_dir> # retrain face_feature/tuned_head.npz
+python eval/negative_tests.py [<lfw_dir>] [--tuned]  # bad inputs (asserted) + degraded faces (reported)
+```
+
+**Offline install**: `pip download` the requirements into a folder on a connected machine, then `pip install --no-index --find-links <folder> ...` on the target. Nothing in the SDK makes network calls at runtime.
+
+**No LICENSE file upstream**: the original code has no licence, so check with Faceplugin before shipping it in a product.
+
+---
+
 ## 🚀 Overview
 
 The **Open Source Face Recognition SDK** by [Faceplugin](https://faceplugin.com/) is a powerful, privacy-focused solution for integrating face recognition capabilities into your applications. Built with deep learning models, this SDK provides high-accuracy face detection and recognition while ensuring complete data privacy through on-premise processing.

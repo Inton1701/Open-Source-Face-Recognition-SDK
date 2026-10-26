@@ -21,18 +21,19 @@ define_img_size(input_size)  # must put define_img_size() before 'import create_
 from face_detect.vision.ssd.mb_tiny_fd import create_mb_tiny_fd, create_mb_tiny_fd_predictor
 from face_detect.vision.ssd.mb_tiny_RFB_fd import create_Mb_Tiny_RFB_fd, create_Mb_Tiny_RFB_fd_predictor
 
-label_path = "./face_detect/models/voc-model-labels.txt"
+model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
+label_path = os.path.join(model_dir, "voc-model-labels.txt")
 test_device = test_device
 
 class_names = [name.strip() for name in open(label_path).readlines()]
 if net_type == 'slim':
-    model_path = "./face_detect/models/pretrained/version-slim-320.pth"
-    # model_path = "./face_detect/models/pretrained/version-slim-640.pth"
+    model_path = os.path.join(model_dir, "pretrained/version-slim-320.pth")
+    # model_path = os.path.join(model_dir, "pretrained/version-slim-640.pth")
     net = create_mb_tiny_fd(len(class_names), is_test=True, device=test_device)
     predictor = create_mb_tiny_fd_predictor(net, candidate_size=candidate_size, device=test_device)
 elif net_type == 'RFB':
-    model_path = "./face_detect/models/pretrained/version-RFB-320.pth"
-    # model_path = "./face_detect/models/pretrained/version-RFB-640.pth"
+    model_path = os.path.join(model_dir, "pretrained/version-RFB-320.pth")
+    # model_path = os.path.join(model_dir, "pretrained/version-RFB-640.pth")
     net = create_Mb_Tiny_RFB_fd(len(class_names), is_test=True, device=test_device)
     predictor = create_Mb_Tiny_RFB_fd_predictor(net, candidate_size=candidate_size, device=test_device)
 else:
