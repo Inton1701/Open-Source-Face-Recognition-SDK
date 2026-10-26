@@ -29,7 +29,7 @@ score = run.get_similarity(feats_a[0], feats_b[0])      # same person if score >
 
 ```bash
 python run.py a.jpg b.jpg            # defaults to test/1.jpg test/2.png
-python run.py a.jpg b.jpg --tuned    # LFW fine-tuned head, threshold run.tuned_threshold (71.9)
+python run.py a.jpg b.jpg --tuned    # mask-aware fine-tuned head, threshold run.tuned_threshold (75.9)
 ```
 
 **Web demo**: `python demo_server.py`, then open http://127.0.0.1:8765 to compare two photos (upload or camera). In GitHub Codespaces the `.devcontainer` installs everything and starts the demo on port 8765.
@@ -40,22 +40,26 @@ python run.py a.jpg b.jpg --tuned    # LFW fine-tuned head, threshold run.tuned_
 - Model paths resolve from the package, so it runs from any working directory.
 - `torch.load(..., weights_only=True)` everywhere.
 - Each face gets its own align image (they used to share one buffer); `run.py` exits cleanly when no face is found.
+- Detector: when nothing passes confidence 0.6 it retries at 0.3 and keeps only the best face, so faces partly covered by a mask or hand are found; faces touching the image edge are clipped instead of dropped.
 
-**Accuracy (LFW, 6,000 pairs, CPU)**
+**Accuracy (LFW, 6,000 pairs, CPU, 10-fold cross-validated on unseen people)**
 
-| | Accuracy | Impostors accepted | True matches at 0.1% impostors |
-|---|---|---|---|
-| As shipped, threshold 75 | 98.03% | 1.70% | 92.1% (threshold ~80) |
-| Fine-tuned head, 10-fold cross-validated | 98.47% | 1.07% | 93.8% |
+| | Clean faces: accuracy | Clean: impostors accepted | Clean vs nose+mouth covered: genuine matched | Covered: impostors accepted |
+|---|---|---|---|---|
+| As shipped, threshold 75 | 98.03% | 1.70% | 47.5% | 0.40% |
+| Head trained on clean pairs only | 98.47% | 1.07% | 44.0% | 0.20% |
+| **Mask-aware head (`--tuned`, shipped)** | **98.28%** | **0.77%** | **65.9%** | 0.97% |
 
-`face_feature/tuned_head.npz` is a 256x256 linear layer on top of the frozen embeddings, trained on all LFW pairs, so its LFW numbers come from the cross-validated run above, not from the shipped file. Degraded photos (heavy blur, sunglasses, mask, low resolution, upside down) mostly get rejected rather than mismatched. There is no liveness / anti-spoofing check.
+`face_feature/tuned_head.npz` is a 256x256 linear layer on top of the frozen embeddings, trained on clean and synthetically covered LFW pairs (nose and mouth painted over using the landmarks: mask colours, skin tone, black, texture). Its threshold (75.9) keeps impostor acceptance at about 1%; `threshold_balanced` (72.0) in the same file matches more covered faces (80%) but lets about 3-4% of impostors through. The table comes from the cross-validated run; the shipped file is trained on all of LFW. A linear head cannot fully recover a covered face: for heavy occlusion, enrol a covered photo of the person as well, or switch to a model trained with masks. Degraded photos (heavy blur, sunglasses, low resolution, upside down) mostly get rejected rather than mismatched. There is no liveness / anti-spoofing check.
 
 **Reproduce**
 
 ```bash
 python eval/embed_lfw.py  <lfw_dir>   # downloads LFW (~173 MB), embeds all pair images (~10 min CPU)
 python eval/eval_lfw.py   <lfw_dir>   # accuracy table above
-python eval/finetune_head.py <lfw_dir> # retrain face_feature/tuned_head.npz
+python eval/embed_masked.py <lfw_dir>  # covered-face versions of the same images (~25 min CPU)
+python eval/eval_masked.py  <lfw_dir> [--save]  # covered-face table above; --save retrains face_feature/tuned_head.npz
+python eval/finetune_head.py <lfw_dir> # older clean-only head (overwrites tuned_head.npz)
 python eval/negative_tests.py [<lfw_dir>] [--tuned]  # bad inputs (asserted) + degraded faces (reported)
 ```
 

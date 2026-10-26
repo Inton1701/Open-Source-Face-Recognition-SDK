@@ -41,6 +41,8 @@ else:
     sys.exit(1)
 net.load(model_path)
 
+fallback_threshold = 0.3
+
 def get_face_boundingbox(orig_image):
     """
         Description:
@@ -49,18 +51,23 @@ def get_face_boundingbox(orig_image):
         Args:
             orig_image: input BGR image.
     """
-    boxes, labels, probs = predictor.predict(cv2.cvtColor(orig_image, cv2.COLOR_BGR2RGB), candidate_size / 2, threshold)
+    rgb = cv2.cvtColor(orig_image, cv2.COLOR_BGR2RGB)
+    boxes, labels, probs = predictor.predict(rgb, candidate_size / 2, threshold)
+    if len(boxes) == 0:
+        # partly covered faces (mask, hand) score lower; accept only the single best candidate
+        boxes, labels, probs = predictor.predict(rgb, candidate_size / 2, fallback_threshold)
+        boxes, probs = boxes[:1], probs[:1]
 
     if len(boxes) == 0:
         return torch.tensor([]), torch.tensor([])
 
+    # keep faces that touch the image edge, clipped to the image
     height, width, _ = orig_image.shape
-    valid_face = np.logical_and(
-        np.logical_and(boxes[:,0] >= 0, boxes[:,1] >= 0), 
-        np.logical_and(boxes[:,2] < width, boxes[:,3] < height)
-    )
+    boxes[:, 0::2] = boxes[:, 0::2].clamp(0, width - 1)
+    boxes[:, 1::2] = boxes[:, 1::2].clamp(0, height - 1)
+    valid_face = (boxes[:, 2] - boxes[:, 0] > 8) & (boxes[:, 3] - boxes[:, 1] > 8)
 
-    boxes = boxes[valid_face] 
+    boxes = boxes[valid_face]
     probs = probs[valid_face]
 
     return boxes, probs
