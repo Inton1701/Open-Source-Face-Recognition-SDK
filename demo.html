@@ -27,7 +27,7 @@ p { margin: 0; color: var(--muted); }
 .stage img, .stage video { display: block; width: 100%; height: auto; }
 .stage svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-button { font: inherit; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); padding: 7px 12px; cursor: pointer; }
+button, select { font: inherit; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); padding: 7px 12px; cursor: pointer; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; padding: 10px 20px; }
 button:disabled { opacity: 0.5; cursor: default; }
 .result { background: var(--paper); border: 1px solid var(--rule); padding: 18px; display: grid; gap: 12px; }
@@ -67,7 +67,13 @@ small { color: var(--muted); }
 
   <div class="row">
     <button type="button" class="primary" id="compare" disabled>Compare</button>
-    <label><input type="checkbox" id="tuned" checked> Use fine-tuned head (better with covered faces)</label>
+    <label for="model">Model</label>
+    <select id="model">
+      <option value="s" selected>InsightFace small (recommended: fast, handles covered faces)</option>
+      <option value="l">InsightFace large (most accurate, slower)</option>
+      <option value="fp_tuned">Faceplugin + mask-aware head</option>
+      <option value="fp">Faceplugin original</option>
+    </select>
     <button type="button" id="sample">Load sample photos</button>
   </div>
 
@@ -153,7 +159,7 @@ compareBtn.addEventListener('click', async () => {
   result.hidden = false; result.innerHTML = '<p>Finding faces and comparing…</p>';
   try {
     const res = await fetch('/compare', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ img1: photos[0], img2: photos[1], tuned: document.getElementById('tuned').checked }) });
+      body: JSON.stringify({ img1: photos[0], img2: photos[1], model: document.getElementById('model').value }) });
     const d = await res.json();
     if (!res.ok) throw new Error(d.error || 'Server error');
     d.faces.forEach((f, i) => { drawBoxes(i, f); slots[i].querySelector('.info').textContent = f.length + ' face' + (f.length === 1 ? '' : 's') + ' found' + (f.length > 1 ? ' (largest used)' : ''); });
@@ -166,7 +172,7 @@ compareBtn.addEventListener('click', async () => {
         <div class="row"><span class="score">${d.score.toFixed(1)}</span>
           <span class="chip ${d.same ? 'ok' : 'bad'}">${d.same ? 'Same person' : 'Different people'}</span></div>
         <div class="meter" title="score out of 100"><span style="width:${pct}%"></span><i style="left:${d.threshold}%"></i></div>
-        <small>Threshold ${d.threshold}${document.getElementById('tuned').checked ? ' (fine-tuned head)' : ''} · scores above it count as the same person · ${d.ms} ms</small>
+        <small>${d.model} · threshold ${d.threshold} · scores above it count as the same person · ${d.ms} ms</small>
         <div class="crops"><img src="${d.crops[0]}" alt="Aligned face from photo 1"><img src="${d.crops[1]}" alt="Aligned face from photo 2"><small>Aligned faces the model compared</small></div>`;
     }
   } catch (e) {

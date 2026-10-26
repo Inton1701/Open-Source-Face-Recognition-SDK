@@ -4,7 +4,7 @@
   "features": {
     "ghcr.io/devcontainers/features/sshd:1": { "version": "latest" }
   },
-  "postCreateCommand": "pip install --no-cache-dir torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cpu && pip install --no-cache-dir numpy==1.26.4 pillow==10.4.0 opencv-python-headless",
+  "postCreateCommand": "pip install --no-cache-dir torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cpu && pip install --no-cache-dir numpy==1.26.4 pillow==10.4.0 opencv-python-headless onnxruntime==1.19.2 && python face_insight/download_models.py",
   "postAttachCommand": "python demo_server.py 8765 0.0.0.0",
   "forwardPorts": [8765],
   "portsAttributes": {

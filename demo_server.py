@@ -1,5 +1,5 @@
 # Local web demo: compare two photos (upload or camera) in the browser.
-# Usage: python demo_server.py [port]   then open http://127.0.0.1:8765
+# Usage: python demo_server.py [port] [host]   then open http://127.0.0.1:8765
 import base64, json, os, sys, time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import cv2
@@ -8,6 +8,17 @@ from run import GetImageInfo, get_similarity, threshold, tuned_threshold
 
 here = os.path.dirname(os.path.abspath(__file__))
 MAX_BODY = 25 * 2**20
+MODELS = {'s': 'InsightFace small', 'l': 'InsightFace large', 'fp_tuned': 'Faceplugin + mask-aware head', 'fp': 'Faceplugin original'}
+_insight = {}
+
+def insight(size):
+    if size not in _insight:
+        from face_insight.insight import InsightFace
+        try:
+            _insight[size] = InsightFace(size)
+        except Exception:
+            raise ValueError('InsightFace models are missing; run: python face_insight/download_models.py')
+    return _insight[size]
 
 def decode(data_url):
     raw = base64.b64decode(data_url.split(',', 1)[-1])
@@ -16,8 +27,11 @@ def decode(data_url):
 def png(img):
     return 'data:image/png;base64,' + base64.b64encode(cv2.imencode('.png', img)[1]).decode()
 
-def analyse(img, tuned):
-    n, boxes, scores, _, aligns, feats = GetImageInfo(img, 10, tuned=tuned)
+def analyse(img, model):
+    if model in ('s', 'l'):
+        n, boxes, scores, aligns, feats = insight(model).get(img, 10)
+    else:
+        n, boxes, scores, _, aligns, feats = GetImageInfo(img, 10, tuned=model == 'fp_tuned')
     faces = [{'box': [round(float(v)) for v in b], 'confidence': round(float(s), 3)} for b, s in zip(boxes, scores)]
     if n == 0:
         return None, faces, None
@@ -25,6 +39,18 @@ def analyse(img, tuned):
     i = int(np.argmax([(b[2] - b[0]) * (b[3] - b[1]) for b in boxes]))
     faces[i]['used'] = True
     return feats[i], faces, png(aligns[i])
+
+def threshold_for(model):
+    if model in ('s', 'l'):
+        from face_insight.insight import THRESHOLDS
+        return THRESHOLDS[model]
+    return tuned_threshold if model == 'fp_tuned' else threshold
+
+def similarity_for(f1, f2, model):
+    if model in ('s', 'l'):
+        from face_insight.insight import similarity
+        return similarity(f1, f2)
+    return float(get_similarity(f1, f2))
 
 class Handler(BaseHTTPRequestHandler):
     def send(self, code, body, ctype='application/json'):
@@ -54,19 +80,21 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(413, {'error': 'Photos are too large; keep both under 25 MB together.'})
         try:
             req = json.loads(self.rfile.read(size))
-            tuned = bool(req.get('tuned'))
+            model = req.get('model', 's')
+            if model not in MODELS:
+                raise ValueError('Unknown model %r.' % model)
             t = time.perf_counter()
             out = []
             for key in ('img1', 'img2'):
                 img = decode(req[key])
                 if img is None:
                     raise ValueError('Photo %s is not a readable image.' % key[-1])
-                out.append(analyse(img, tuned))
-            limit = tuned_threshold if tuned else threshold
-            result = {'faces': [o[1] for o in out], 'crops': [o[2] for o in out], 'threshold': round(limit, 1),
-                      'ms': round((time.perf_counter() - t) * 1000)}
+                out.append(analyse(img, model))
+            limit = threshold_for(model)
+            result = {'faces': [o[1] for o in out], 'crops': [o[2] for o in out], 'model': MODELS[model],
+                      'threshold': round(limit, 1), 'ms': round((time.perf_counter() - t) * 1000)}
             if out[0][0] is not None and out[1][0] is not None:
-                score = float(get_similarity(out[0][0], out[1][0]))
+                score = similarity_for(out[0][0], out[1][0], model)
                 result.update(score=round(score, 2), same=score > limit)
             self.send(200, result)
         except (ValueError, TypeError, KeyError) as e:
