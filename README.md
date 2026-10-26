@@ -32,6 +32,8 @@ python run.py a.jpg b.jpg            # defaults to test/1.jpg test/2.png
 python run.py a.jpg b.jpg --tuned    # LFW fine-tuned head, threshold run.tuned_threshold (71.9)
 ```
 
+**Web demo**: `python demo_server.py`, then open http://127.0.0.1:8765 to compare two photos (upload or camera). In GitHub Codespaces the `.devcontainer` installs everything and starts the demo on port 8765.
+
 **Fixes**
 
 - `GetImageInfo` validates input: `None`/empty/non-uint8 raise `ValueError`/`TypeError`; grayscale, BGRA and sliced (non-contiguous) arrays are converted instead of crashing.

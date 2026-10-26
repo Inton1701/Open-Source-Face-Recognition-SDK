@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Face Compare</title>
+<style>
+:root {
+  --bg: #f3f5f6; --paper: #fff; --ink: #14202a; --muted: #5a6873; --rule: #d6dde2; --accent: #1f7a8c;
+  --ok: #2c7a4b; --ok-bg: #e2f2e8; --bad: #b23a2a; --bad-bg: #f9e2dd; --box: #19c37d;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #0f161b; --paper: #162027; --ink: #e4ebef; --muted: #93a3ae; --rule: #2a3741; --accent: #4fb3c6;
+  --ok: #6fcf94; --ok-bg: #173325; --bad: #f08a78; --bad-bg: #3a1b16; color-scheme: dark } }
+body { margin: 0; background: var(--bg); color: var(--ink); padding: 24px 16px 48px; }
+main { max-width: 980px; margin: 0 auto; display: grid; gap: 20px; }
+h1 { margin: 0; font-size: 1.6rem; }
+p { margin: 0; color: var(--muted); }
+.photos { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.slot { background: var(--paper); border: 1px solid var(--rule); padding: 14px; display: grid; gap: 10px; min-width: 0; }
+.slot h2 { margin: 0; font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.drop { position: relative; border: 2px dashed var(--rule); min-height: 240px; display: grid; place-items: center; text-align: center; color: var(--muted); cursor: pointer; overflow: hidden; }
+.drop.over { border-color: var(--accent); }
+.drop:focus-visible, button:focus-visible, label:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stage { position: relative; width: 100%; }
+.stage img, .stage video { display: block; width: 100%; height: auto; }
+.stage svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button { font: inherit; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); padding: 7px 12px; cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; padding: 10px 20px; }
+button:disabled { opacity: 0.5; cursor: default; }
+.result { background: var(--paper); border: 1px solid var(--rule); padding: 18px; display: grid; gap: 12px; }
+.score { font: 600 2.6rem/1 ui-monospace, Consolas, monospace; font-variant-numeric: tabular-nums; }
+.chip { display: inline-block; padding: 4px 10px; font-weight: 600; }
+.chip.ok { color: var(--ok); background: var(--ok-bg); } .chip.bad { color: var(--bad); background: var(--bad-bg); }
+.meter { position: relative; height: 10px; background: var(--bg); }
+.meter span { position: absolute; inset: 0 auto 0 0; background: var(--accent); }
+.meter i { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--ink); }
+.crops { display: flex; gap: 10px; align-items: center; }
+.crops img { width: 96px; height: 96px; image-rendering: pixelated; border: 1px solid var(--rule); }
+.err { color: var(--bad); }
+small { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>Face Compare</h1>
+    <p>Add two photos, by upload or camera, then compare. Runs locally on this computer; photos are not saved.</p>
+  </div>
+
+  <div class="photos">
+    <section class="slot" data-slot="0">
+      <h2>Photo 1</h2>
+      <div class="drop" tabindex="0" role="button" aria-label="Choose photo 1">Drop a photo here or click to choose</div>
+      <div class="row"><button type="button" class="cam">Use camera</button><button type="button" class="snap" hidden>Take photo</button><small class="info"></small></div>
+      <input type="file" accept="image/*" hidden id="file0">
+    </section>
+    <section class="slot" data-slot="1">
+      <h2>Photo 2</h2>
+      <div class="drop" tabindex="0" role="button" aria-label="Choose photo 2">Drop a photo here or click to choose</div>
+      <div class="row"><button type="button" class="cam">Use camera</button><button type="button" class="snap" hidden>Take photo</button><small class="info"></small></div>
+      <input type="file" accept="image/*" hidden id="file1">
+    </section>
+  </div>
+
+  <div class="row">
+    <button type="button" class="primary" id="compare" disabled>Compare</button>
+    <label><input type="checkbox" id="tuned"> Use fine-tuned head</label>
+    <button type="button" id="sample">Load sample photos</button>
+  </div>
+
+  <div class="result" id="result" hidden></div>
+</main>
+
+<script>
+const photos = [null, null];
+const slots = [...document.querySelectorAll('.slot')];
+const compareBtn = document.getElementById('compare');
+const result = document.getElementById('result');
+
+function show(i, dataUrl, faces) {
+  photos[i] = dataUrl;
+  const drop = slots[i].querySelector('.drop');
+  drop.innerHTML = '<div class="stage"><img alt="Photo ' + (i + 1) + '"></div>';
+  const img = drop.querySelector('img');
+  img.onload = () => drawBoxes(i, faces || []);
+  img.src = dataUrl;
+  slots[i].querySelector('.info').textContent = '';
+  compareBtn.disabled = !(photos[0] && photos[1]);
+}
+
+function drawBoxes(i, faces) {
+  const stage = slots[i].querySelector('.stage');
+  if (!stage) return;
+  const img = stage.querySelector('img');
+  stage.querySelector('svg')?.remove();
+  const w = img.naturalWidth, h = img.naturalHeight, sw = Math.max(2, w / 200);
+  stage.insertAdjacentHTML('beforeend', `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">` + faces.map(f => {
+    const [x1, y1, x2, y2] = f.box;
+    return `<rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" fill="none" stroke="var(--box)" stroke-width="${sw}" stroke-dasharray="${f.used ? '' : sw * 3}"/>`;
+  }).join('') + '</svg>');
+}
+
+function readFile(i, file) {
+  if (!file || !file.type.startsWith('image/')) { slots[i].querySelector('.info').textContent = 'That file is not an image.'; return; }
+  const r = new FileReader();
+  r.onload = () => show(i, r.result);
+  r.readAsDataURL(file);
+}
+
+slots.forEach((slot, i) => {
+  const drop = slot.querySelector('.drop'), input = slot.querySelector('input');
+  drop.addEventListener('click', () => { if (!slot.stream) input.click(); });
+  drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
+  input.addEventListener('change', () => readFile(i, input.files[0]));
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); readFile(i, e.dataTransfer.files[0]); });
+
+  const cam = slot.querySelector('.cam'), snap = slot.querySelector('.snap');
+  cam.addEventListener('click', async () => {
+    try {
+      slot.stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      drop.innerHTML = '<div class="stage"><video autoplay playsinline muted></video></div>';
+      drop.querySelector('video').srcObject = slot.stream;
+      snap.hidden = false; cam.hidden = true;
+    } catch (e) {
+      slot.querySelector('.info').textContent = 'Camera not available here: ' + e.message;
+    }
+  });
+  snap.addEventListener('click', () => {
+    const v = drop.querySelector('video'), c = document.createElement('canvas');
+    c.width = v.videoWidth; c.height = v.videoHeight;
+    c.getContext('2d').drawImage(v, 0, 0);
+    slot.stream.getTracks().forEach(t => t.stop()); slot.stream = null;
+    snap.hidden = true; cam.hidden = false;
+    show(i, c.toDataURL('image/jpeg', 0.92));
+  });
+});
+
+document.getElementById('sample').addEventListener('click', async () => {
+  // sample photos are served by the server from test/
+  for (const [i, path] of [[0, '/sample/1'], [1, '/sample/2']]) {
+    const blob = await (await fetch(path)).blob();
+    readFile(i, new File([blob], 'sample', { type: blob.type }));
+  }
+});
+
+compareBtn.addEventListener('click', async () => {
+  compareBtn.disabled = true; compareBtn.textContent = 'Comparing…';
+  result.hidden = false; result.innerHTML = '<p>Finding faces and comparing…</p>';
+  try {
+    const res = await fetch('/compare', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ img1: photos[0], img2: photos[1], tuned: document.getElementById('tuned').checked }) });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || 'Server error');
+    d.faces.forEach((f, i) => { drawBoxes(i, f); slots[i].querySelector('.info').textContent = f.length + ' face' + (f.length === 1 ? '' : 's') + ' found' + (f.length > 1 ? ' (largest used)' : ''); });
+    if (d.score === undefined) {
+      const missing = d.faces.map((f, i) => f.length ? null : 'photo ' + (i + 1)).filter(Boolean).join(' and ');
+      result.innerHTML = `<p class="err">No face found in ${missing}. Try a clearer, front-facing photo.</p>`;
+    } else {
+      const pct = Math.max(0, Math.min(100, d.score));
+      result.innerHTML = `
+        <div class="row"><span class="score">${d.score.toFixed(1)}</span>
+          <span class="chip ${d.same ? 'ok' : 'bad'}">${d.same ? 'Same person' : 'Different people'}</span></div>
+        <div class="meter" title="score out of 100"><span style="width:${pct}%"></span><i style="left:${d.threshold}%"></i></div>
+        <small>Threshold ${d.threshold}${document.getElementById('tuned').checked ? ' (fine-tuned head)' : ''} · scores above it count as the same person · ${d.ms} ms</small>
+        <div class="crops"><img src="${d.crops[0]}" alt="Aligned face from photo 1"><img src="${d.crops[1]}" alt="Aligned face from photo 2"><small>Aligned faces the model compared</small></div>`;
+    }
+  } catch (e) {
+    result.innerHTML = `<p class="err">${e.message}</p>`;
+  } finally {
+    compareBtn.textContent = 'Compare'; compareBtn.disabled = !(photos[0] && photos[1]);
+  }
+});
+</script>
+</body>
+</html>
