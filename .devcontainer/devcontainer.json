@@ -1,8 +1,11 @@
 {
   "name": "Face Compare demo",
   "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "features": {
+    "ghcr.io/devcontainers/features/sshd:1": { "version": "latest" }
+  },
   "postCreateCommand": "pip install --no-cache-dir torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cpu && pip install --no-cache-dir numpy==1.26.4 pillow==10.4.0 opencv-python-headless",
-  "postStartCommand": "nohup python demo_server.py > /tmp/demo.log 2>&1 &",
+  "postStartCommand": "setsid nohup python demo_server.py 8765 0.0.0.0 > /tmp/demo.log 2>&1 < /dev/null &",
   "forwardPorts": [8765],
   "portsAttributes": {
     "8765": { "label": "Face Compare demo", "onAutoForward": "openBrowser" }

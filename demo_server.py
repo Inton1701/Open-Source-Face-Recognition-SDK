@@ -77,5 +77,6 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == '__main__':
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
-    print('Face compare demo on http://127.0.0.1:%d' % port, flush=True)
-    ThreadingHTTPServer(('127.0.0.1', port), Handler).serve_forever()
+    host = sys.argv[2] if len(sys.argv) > 2 else '127.0.0.1'  # 0.0.0.0 inside a container
+    print('Face compare demo on http://%s:%d' % (host, port), flush=True)
+    ThreadingHTTPServer((host, port), Handler).serve_forever()
