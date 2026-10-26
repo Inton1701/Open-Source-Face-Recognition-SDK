@@ -9,9 +9,10 @@ import ctypes
 
 model_feature = irn50_pytorch("./face_feature/irn50_pytorch.npy")
 model_feature.eval()
-feature_align_image = np.zeros([128, 128, 3], dtype=np.uint8)
 
 def get_face_feature(image, landmark):
+    # new buffer per call, otherwise every returned align image is the same array
+    feature_align_image = np.zeros([128, 128, 3], dtype=np.uint8)
     landmark_vec = (ctypes.c_float * len(landmark))(*landmark)
     align_vertical(image, image.shape[1], image.shape[0], feature_align_image, 128, 128, 3, landmark_vec, 48, 64, 40)
     # cv2.imwrite("D:/align.png", feature_align_image)

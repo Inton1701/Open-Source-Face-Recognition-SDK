@@ -59,10 +59,14 @@ if __name__ == '__main__':
     efn = os.getcwd() + "/test/1.jpg"
     img = cv2.imread(efn, cv2.IMREAD_COLOR)
     count, boxes, scores, landmarks, alignimgs, features1 = GetImageInfo(img, 5)
-    
+    if count == 0:
+        raise SystemExit('no face found in ' + efn)
+
     vfn = os.getcwd() + "/test/2.png"
     img = cv2.imread(vfn, cv2.IMREAD_COLOR)
     count, boxes, scores, landmarks, alignimgs, features2 = GetImageInfo(img, 5)
+    if count == 0:
+        raise SystemExit('no face found in ' + vfn)
 
     score = get_similarity(features1[0], features2[0])
     print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
