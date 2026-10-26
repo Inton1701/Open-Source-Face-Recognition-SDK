@@ -17,7 +17,28 @@
 
 Changes in this fork, and how it was tested. The Faceplugin docs below describe a `FaceRecognition` class that does not exist; the real API is `run.py`.
 
-**Usage**
+**Recommended model: InsightFace small** (`face_insight/`). Same LFW images, same rule for every model (one threshold per model, picked on training folds so about 1% of impostors get in, 10-fold cross-validated), networking blocked during all runs:
+
+| | LFW accuracy | Clean: genuine matched | Clear vs nose+mouth covered: genuine matched | Covered: impostors accepted | Speed (1 image, CPU) | Model size |
+|---|---|---|---|---|---|---|
+| Faceplugin (original) | 97.97% | 94.2% | 24.6% | 0.07% | ~145 ms | 59 MB |
+| **InsightFace small** (MobileFaceNet) | **99.38%** | **99.1%** | **93.1%** | 0.20% | **~40 ms** | 16 MB |
+| InsightFace large (ResNet50) | 99.65% | 99.4% | 98.0% | 0.43% | ~190 ms | 183 MB |
+
+Enrolling each person with a clear and a covered photo (best of the two) raises covered matching further: InsightFace small 93.1% to 97.3%.
+
+```python
+import cv2
+from face_insight.insight import InsightFace, similarity, THRESHOLDS
+model = InsightFace('s')                        # 's' small (default) or 'l' large
+*_, feats_a = model.get(cv2.imread("a.jpg"))    # returns count, boxes, scores, aligned faces, embeddings
+*_, feats_b = model.get(cv2.imread("b.jpg"))
+same = similarity(feats_a[0], feats_b[0]) > THRESHOLDS['s']   # 60.3 small, 58.2 large
+```
+
+Models: run `python face_insight/download_models.py` once on a machine with internet, then copy `face_insight/models/` to offline machines; nothing downloads at runtime. They are not in git (size). **InsightFace's pretrained models are licensed for non-commercial research use only**; a commercial product needs a licence from InsightFace (as does this Faceplugin code, which has no licence at all).
+
+**Faceplugin usage**
 
 ```python
 import sys; sys.path.insert(0, "path/to/this/repo")   # works from any folder
@@ -32,7 +53,7 @@ python run.py a.jpg b.jpg            # defaults to test/1.jpg test/2.png
 python run.py a.jpg b.jpg --tuned    # mask-aware fine-tuned head, threshold run.tuned_threshold (75.9)
 ```
 
-**Web demo**: `python demo_server.py`, then open http://127.0.0.1:8765 to compare two photos (upload or camera). In GitHub Codespaces the `.devcontainer` installs everything and starts the demo on port 8765.
+**Web demo**: `python demo_server.py`, then open http://127.0.0.1:8765 to compare two photos (upload or camera) with any of the models (InsightFace small by default). In GitHub Codespaces the `.devcontainer` installs everything, downloads the models and starts the demo on port 8765.
 
 **Fixes**
 
@@ -42,7 +63,7 @@ python run.py a.jpg b.jpg --tuned    # mask-aware fine-tuned head, threshold run
 - Each face gets its own align image (they used to share one buffer); `run.py` exits cleanly when no face is found.
 - Detector: when nothing passes confidence 0.6 it retries at 0.3 and keeps only the best face, so faces partly covered by a mask or hand are found; faces touching the image edge are clipped instead of dropped.
 
-**Accuracy (LFW, 6,000 pairs, CPU, 10-fold cross-validated on unseen people)**
+**Faceplugin fine-tuning (LFW, 6,000 pairs, CPU, 10-fold cross-validated on unseen people)**
 
 | | Clean faces: accuracy | Clean: impostors accepted | Clean vs nose+mouth covered: genuine matched | Covered: impostors accepted |
 |---|---|---|---|---|
@@ -61,9 +82,12 @@ python eval/embed_masked.py <lfw_dir>  # covered-face versions of the same image
 python eval/eval_masked.py  <lfw_dir> [--save]  # covered-face table above; --save retrains face_feature/tuned_head.npz
 python eval/finetune_head.py <lfw_dir> # older clean-only head (overwrites tuned_head.npz)
 python eval/negative_tests.py [<lfw_dir>] [--tuned]  # bad inputs (asserted) + degraded faces (reported)
+python eval/save_covered.py <lfw_dir>                # one fixed set of covered images for all models
+python eval/embed_images.py <lfw_dir> <fp|s|l> <clean|covered>   # embeds with networking blocked
+python eval/compare_models.py <lfw_dir>              # model comparison table above
 ```
 
-**Offline install**: `pip download` the requirements into a folder on a connected machine, then `pip install --no-index --find-links <folder> ...` on the target. Nothing in the SDK makes network calls at runtime.
+**Offline install**: `pip download -r requirements.txt` into a folder on a connected machine and run `face_insight/download_models.py`; on the target, `pip install --no-index --find-links <folder> -r requirements.txt` and copy `face_insight/models/`. Nothing in the SDK makes network calls at runtime (all benchmark runs had networking blocked).
 
 **No LICENSE file upstream**: the original code has no licence, so check with Faceplugin before shipping it in a product.
 
