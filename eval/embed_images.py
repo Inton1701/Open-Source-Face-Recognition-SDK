@@ -1,6 +1,7 @@
 # Embed the LFW pair images (clean or covered) with one model, with all networking blocked.
-# Writes <lfw_dir>/emb_<model>_<set>.npz.  Models: fp (Faceplugin), s / l (InsightFace small / large).
-# Usage: python eval/embed_images.py <lfw_dir> <fp|s|l> <clean|covered>
+# Writes <lfw_dir>/emb_<model>_<set>.npz.  Models: fp (Faceplugin), s / l (InsightFace small / large),
+# dlib (dlib ResNet + BlazeFace, face_dlib/).
+# Usage: python eval/embed_images.py <lfw_dir> <fp|s|l|dlib> <clean|covered>
 import os, socket, sys, time, warnings
 warnings.filterwarnings('ignore')
 
@@ -22,8 +23,12 @@ if model == 'fp':
         n, boxes, _, _, _, feats = GetImageInfo(img, 5)
         return n, boxes, feats
 else:
-    from face_insight.insight import InsightFace
-    m = InsightFace(model)
+    if model == 'dlib':
+        from face_dlib.dlib_face import DlibFace
+        m = DlibFace()
+    else:
+        from face_insight.insight import InsightFace
+        m = InsightFace(model)
     def get(img):
         n, boxes, _, _, feats = m.get(img, 5)
         return n, boxes, feats

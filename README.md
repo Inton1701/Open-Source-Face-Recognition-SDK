@@ -38,6 +38,8 @@ same = similarity(feats_a[0], feats_b[0]) > THRESHOLDS['s']   # 60.3 small, 58.2
 
 Models: run `python face_insight/download_models.py` once on a machine with internet, then copy `face_insight/models/` to offline machines; nothing downloads at runtime. They are not in git (size). **InsightFace's pretrained models are licensed for non-commercial research use only**; a commercial product needs a licence from InsightFace (as does this Faceplugin code, which has no licence at all).
 
+**Free-licence alternative** (`face_dlib/`): dlib ResNet recogniser (public domain / CC0) + MediaPipe BlazeFace full-range detector (Apache-2.0, run with LiteRT) + dlib's CC0 5-point landmarks, behind the same `get()` interface as `face_insight/`. Install with `pip install dlib ai-edge-litert` (dlib compiles from source; install OpenBLAS first, e.g. `apt install libopenblas-dev`, or recognition is about 10x slower), then run `python face_dlib/download_models.py` (GitHub and Google Storage, checksums pinned). Its threshold is set once its LFW run is done. Which face models are actually free for commercial use, what was dropped and why, and the notice duties when rebranding: [docs/free-models.md](docs/free-models.md).
+
 **Faceplugin usage**
 
 ```python
@@ -83,8 +85,9 @@ python eval/eval_masked.py  <lfw_dir> [--save]  # covered-face table above; --sa
 python eval/finetune_head.py <lfw_dir> # older clean-only head (overwrites tuned_head.npz)
 python eval/negative_tests.py [<lfw_dir>] [--tuned]  # bad inputs (asserted) + degraded faces (reported)
 python eval/save_covered.py <lfw_dir>                # one fixed set of covered images for all models
-python eval/embed_images.py <lfw_dir> <fp|s|l> <clean|covered>   # embeds with networking blocked
-python eval/compare_models.py <lfw_dir>              # model comparison table above
+python eval/embed_images.py <lfw_dir> <fp|s|l|dlib> <clean|covered>   # embeds with networking blocked
+python eval/compare_models.py <lfw_dir> [fp s l dlib]   # model comparison table above (+ the threshold to ship)
+python eval/lighting_tests.py <lfw_dir> [s l dlib]      # lighting and night conditions at the shipped thresholds
 ```
 
 **Offline install**: `pip download -r requirements.txt` into a folder on a connected machine and run `face_insight/download_models.py`; on the target, `pip install --no-index --find-links <folder> -r requirements.txt` and copy `face_insight/models/`. Nothing in the SDK makes network calls at runtime (all benchmark runs had networking blocked).

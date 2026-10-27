@@ -1,7 +1,7 @@
 # Lighting and night tests: enrol the clean LFW photo, probe with the other photo of the pair under
 # simulated lighting. Reports face found, genuine matched and impostors accepted at the shipped thresholds.
-# Usage: python eval/lighting_tests.py <lfw_dir> [s] [l] [--preview]
-#   (needs eval/embed_lfw.py and eval/embed_images.py <lfw_dir> <s|l> clean first)
+# Usage: python eval/lighting_tests.py <lfw_dir> [s] [l] [dlib] [--preview]
+#   (needs eval/embed_lfw.py and eval/embed_images.py <lfw_dir> <s|l|dlib> clean first)
 import os, sys, time, warnings
 warnings.filterwarnings('ignore')
 repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -86,8 +86,13 @@ if __name__ == '__main__':
         sys.exit()
 
     from face_insight.insight import InsightFace, similarity, THRESHOLDS
+    def load(m):
+        if m == 'dlib':
+            from face_dlib.dlib_face import DlibFace, THRESHOLDS as T
+            return DlibFace(), T[m]
+        return InsightFace(m), THRESHOLDS[m]
     for m in models:
-        model, T = InsightFace(m), THRESHOLDS[m]
+        model, T = load(m)
         E = np.load(os.path.join(lfw, 'emb_%s_clean.npz' % m))
         enrolled, enrolled_ok = E['F'], E['found']
 
@@ -103,8 +108,8 @@ if __name__ == '__main__':
             f = feats[int(np.argmin([np.linalg.norm((bx[:2] + bx[2:]) / 2 - c) for bx in boxes]))]
             return similarity(enrolled[a[k]], f)
 
-        print('\n== InsightFace %s (threshold %.1f), %d genuine + %d impostor pairs'
-              % ({'s': 'small', 'l': 'large'}[m], T, (same[sel] == 1).sum(), (same[sel] == 0).sum()))
+        print('\n== %s (threshold %.1f), %d genuine + %d impostor pairs'
+              % ({'s': 'InsightFace small', 'l': 'InsightFace large', 'dlib': 'dlib + BlazeFace'}[m], T, (same[sel] == 1).sum(), (same[sel] == 0).sum()))
         print('  %-34s %10s %15s %17s %13s' % ('condition', 'face found', 'genuine matched', 'impostors accepted', 'median score'))
         t0 = time.perf_counter()
         runs = [(c, False) for c in CONDITIONS] + [(c, True) for c in NIGHT if m == 's']
