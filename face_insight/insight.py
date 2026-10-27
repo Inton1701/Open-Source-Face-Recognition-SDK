@@ -28,13 +28,32 @@ def nms(boxes, scores, thresh=0.4):
         order = order[1:][iou <= thresh]
     return keep
 
+def gamma(channel, g):
+    return np.clip(255 * (channel / 255.0) ** g, 0, 255).astype(np.uint8)
+
+def auto_enhance(img):
+    """Brighten dark photos (night, backlight): gamma by mean lightness, then CLAHE. Bright photos pass through."""
+    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+    mean = lab[..., 0].mean()
+    if mean >= 90:
+        return img
+    lab[..., 0] = gamma(lab[..., 0], max(0.35, np.log(0.45) / np.log(max(mean, 1) / 255)))
+    lab[..., 0] = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(lab[..., 0])
+    return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
 class InsightFace:
-    def __init__(self, size='s', model_dir=MODEL_DIR, det_size=640, det_thresh=0.5):
+    def __init__(self, size='s', model_dir=MODEL_DIR, det_size=640, det_thresh=0.5, fallback_thresh=None,
+                 flip=False, enhance=False):
+        """flip: average the face with its mirror image; enhance: brighten dark photos before detection;
+        fallback_thresh: when nothing passes det_thresh, retry at this score and keep the best face."""
         pack, det, rec = PACKS[size]
         opts = ort.SessionOptions()
+        # idle threads spinning between runs starve the other session: large model 615 -> 135 ms per photo
+        opts.add_session_config_entry('session.intra_op.allow_spinning', '0')
         self.det = ort.InferenceSession(os.path.join(model_dir, pack, det), opts, providers=['CPUExecutionProvider'])
         self.rec = ort.InferenceSession(os.path.join(model_dir, pack, rec), opts, providers=['CPUExecutionProvider'])
-        self.det_size, self.det_thresh = det_size, det_thresh
+        self.det_size, self.det_thresh, self.fallback_thresh = det_size, det_thresh, fallback_thresh
+        self.flip, self.enhance = flip, enhance
         self.det_in, self.rec_in = self.det.get_inputs()[0].name, self.rec.get_inputs()[0].name
         self._centers = {}
 
@@ -45,8 +64,9 @@ class InsightFace:
             self._centers[key] = np.repeat(c, 2, axis=0)  # 2 anchors per location
         return self._centers[key]
 
-    def detect(self, img):
-        """BGR image -> boxes (n,4), scores (n,), 5-point landmarks (n,5,2), in image pixels."""
+    def detect(self, img, thresh=None):
+        """BGR image -> boxes (n,4), scores (n,), 5-point landmarks (n,5,2), in image pixels, best first."""
+        thresh = self.det_thresh if thresh is None else thresh
         s = self.det_size
         scale = s / max(img.shape[:2])
         resized = cv2.resize(img, (int(img.shape[1] * scale), int(img.shape[0] * scale)))
@@ -57,7 +77,7 @@ class InsightFace:
         for i, stride in enumerate((8, 16, 32)):
             sc, bb, kp = outs[i][:, 0], outs[i + 3] * stride, outs[i + 6] * stride
             ctr = self._anchors(s // stride, s // stride, stride)
-            keep = sc >= self.det_thresh
+            keep = sc >= thresh
             c = ctr[keep]
             boxes.append(np.hstack([c - bb[keep][:, :2], c + bb[keep][:, 2:]]))
             scores.append(sc[keep])
@@ -72,11 +92,19 @@ class InsightFace:
         face = cv2.warpAffine(img, M, (112, 112), borderValue=0)
         blob = cv2.dnn.blobFromImage(face, 1 / 127.5, (112, 112), (127.5, 127.5, 127.5), swapRB=True)
         f = self.rec.run(None, {self.rec_in: blob})[0][0]
+        f = f / np.linalg.norm(f)
+        if self.flip:  # separate run: the models declare batch 1 and a batch of 2 is ~10x slower on the large one
+            m = self.rec.run(None, {self.rec_in: np.ascontiguousarray(blob[..., ::-1])})[0][0]
+            f = f + m / np.linalg.norm(m)
         return f / np.linalg.norm(f), face
 
     def get(self, img, max_faces=10):
         """Same idea as run.GetImageInfo: (count, boxes, scores, aligned faces, embeddings)."""
+        if self.enhance:
+            img = auto_enhance(img)
         boxes, scores, kpss = self.detect(img)
+        if len(boxes) == 0 and self.fallback_thresh:
+            boxes, scores, kpss = (x[:1] for x in self.detect(img, self.fallback_thresh))
         boxes, scores, kpss = boxes[:max_faces], scores[:max_faces], kpss[:max_faces]
         out = [self.embed(img, k) for k in kpss]
         return len(boxes), list(boxes), list(scores), [o[1] for o in out], [o[0] for o in out]
